@@ -23,8 +23,13 @@ if not exist "node_modules" (
     echo Installing dependencies. This can take a few minutes on the first run...
     call npm install
     if errorlevel 1 (
-        echo [WARN] "npm install" reported an error. Attempting to start the bot anyway...
+        echo [WARN] "npm install" failed. Retrying with --legacy-peer-deps...
         echo.
+        call npm install --legacy-peer-deps
+        if errorlevel 1 (
+            echo [WARN] Dependency installation still reported an error. Attempting to start anyway...
+            echo.
+        )
     )
 )
 
