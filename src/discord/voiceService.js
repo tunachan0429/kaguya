@@ -16,8 +16,10 @@ export class VoiceService {
    * @param {Object} deps
    * @param {(options: any) => any} deps.joinVoiceChannel `@discordjs/voice` joinVoiceChannel.
    * @param {() => any} deps.createAudioPlayer `@discordjs/voice` createAudioPlayer.
+   * @param {{ log: Function, error: Function }} [deps.logger] Logger for connection /
+   *   player diagnostics (defaults to `console`).
    */
-  constructor({ joinVoiceChannel, createAudioPlayer }) {
+  constructor({ joinVoiceChannel, createAudioPlayer, logger = console }) {
     if (typeof joinVoiceChannel !== 'function' || typeof createAudioPlayer !== 'function') {
       throw new Error('VoiceService requires joinVoiceChannel and createAudioPlayer.');
     }
@@ -25,6 +27,8 @@ export class VoiceService {
     this._joinVoiceChannel = joinVoiceChannel;
     /** @private */
     this._createAudioPlayer = createAudioPlayer;
+    /** @private */
+    this._logger = logger;
   }
 
   /**
@@ -48,10 +52,32 @@ export class VoiceService {
       adapterCreator,
       selfDeaf,
     });
+    const reusingPlayer = Boolean(player);
     const activePlayer = player || this._createAudioPlayer();
     if (connection && typeof connection.subscribe === 'function') {
       connection.subscribe(activePlayer);
     }
+
+    const logger = this._logger;
+    // Diagnostic listeners: surface the real cause of silent audio. Guarded so
+    // join still works with the lightweight fakes used in tests.
+    if (connection && typeof connection.on === 'function') {
+      connection.on('stateChange', (o, n) =>
+        logger.log('[voice] connection ' + (o && o.status) + ' -> ' + (n && n.status))
+      );
+      connection.on('error', (e) =>
+        logger.error('[voice] connection error: ' + (e && (e.message || e)))
+      );
+    }
+    // Only attach to a freshly created player (not a reused one, whose listener
+    // is already attached). An error listener also prevents an unhandled 'error'
+    // event from crashing the process.
+    if (!reusingPlayer && activePlayer && typeof activePlayer.on === 'function') {
+      activePlayer.on('error', (e) =>
+        logger.error('[voice] player error: ' + (e && (e.stack || e.message || e)))
+      );
+    }
+
     return { connection, player: activePlayer };
   }
 

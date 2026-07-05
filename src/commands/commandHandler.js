@@ -19,7 +19,7 @@ import {
   NO_ACTIVE_SESSION,
   QUEUE_CLEARED,
   invalidSpeakerMessage,
-  formatSpeakerList,
+  formatSpeakerListChunks,
   voiceChangedMessage,
   helpMessage,
   unrecognizedCommandMessage,
@@ -183,18 +183,17 @@ export class CommandHandler {
     }
 
     // Invalid: retain the previous speaker (do NOT mutate session.speakerId) and
-    // post the available ids. The retention holds even if the post fails.
-    let speakers = [];
-    try {
-      speakers = await this._voicevox.listSpeakers();
-    } catch {
-      speakers = [];
-    }
-    await this._safeSend(ctx.send, invalidSpeakerMessage(speakers)); // Req 5.4
+    // post a short message directing the user to `!voices`. The retention holds
+    // even if the post fails (Property 10). No listSpeakers() call is needed
+    // here — the short message avoids Discord's 2000-char limit entirely.
+    await this._safeSend(ctx.send, invalidSpeakerMessage()); // Req 5.4
   }
 
   /**
    * List the available voices (Req 5.5).
+   *
+   * The catalogue can exceed Discord's 2000-character message limit, so it is
+   * split into chunks and posted as several messages via {@link _safeSendChunks}.
    * @param {CommandContext} ctx
    */
   async voices(ctx) {
@@ -205,7 +204,7 @@ export class CommandHandler {
       await this._safeSend(ctx.send, 'ボイス一覧の取得に失敗しました。VOICEVOXが起動しているか確認してください。');
       return;
     }
-    await this._safeSend(ctx.send, formatSpeakerList(speakers)); // Req 5.5
+    await this._safeSendChunks(ctx.send, formatSpeakerListChunks(speakers)); // Req 5.5
   }
 
   /**
@@ -229,6 +228,21 @@ export class CommandHandler {
       await send(content);
     } catch {
       /* best-effort */
+    }
+  }
+
+  /**
+   * Post an ordered sequence of message chunks, each via {@link _safeSend} so a
+   * single failed post never aborts the rest or crashes the process. Used to
+   * deliver a long speaker catalogue that exceeds Discord's per-message limit.
+   *
+   * @private
+   * @param {(content: string) => Promise<any>} send
+   * @param {string[]} chunks
+   */
+  async _safeSendChunks(send, chunks) {
+    for (const chunk of chunks) {
+      await this._safeSend(send, chunk);
     }
   }
 }

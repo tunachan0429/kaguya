@@ -33,10 +33,14 @@ export class AudioPlaybackController {
    * @param {(stream: any) => any} deps.createAudioResource Wraps a stream into an audio resource.
    * @param {string} [deps.idleStatus] The player status value that signals playback completion.
    *   Defaults to `'idle'`; production wiring passes `AudioPlayerStatus.Idle`.
+   * @param {{ log: Function, error: Function }} [deps.logger] Logger for playback
+   *   diagnostics (defaults to `console`).
    */
-  constructor({ session, voicevoxClient, readingLimit, createAudioResource, idleStatus = 'idle' }) {
+  constructor({ session, voicevoxClient, readingLimit, createAudioResource, idleStatus = 'idle', logger = console }) {
     /** @private */
     this._session = session;
+    /** @private */
+    this._logger = logger;
     /** @private */
     this._player = session.player;
     /** @private */
@@ -156,6 +160,7 @@ export class AudioPlaybackController {
         const stream = await this._voicevox.synthesize(spoken, this._session.speakerId);
         const resource = this._createAudioResource(stream);
         this._current = resource;
+        this._logger.log('[playback] synthesized, now playing: "' + spoken.slice(0, 40) + '"');
         this._player.play(resource);
         // Playing now; advancement happens on the Idle event (Req 4.3).
         return;
@@ -178,11 +183,14 @@ export class AudioPlaybackController {
    * post an error to the linked text channel (Req 9.4).
    *
    * @private
-   * @param {unknown} _err
+   * @param {unknown} err
    * @returns {Promise<boolean>} `true` when handling completed; `false` when a
    *   step failed (e.g. the error post threw), signalling the pump to halt.
    */
-  async _handleSynthesisFailure(_err) {
+  async _handleSynthesisFailure(err) {
+    this._logger.error(
+      '[playback] synthesis/playback failed: ' + (err && (err.stack || err.message || err))
+    );
     try {
       await this._session.send(SYNTHESIS_FAILED);
       return true;

@@ -33,15 +33,20 @@ export const SYNTHESIS_FAILED =
   '音声の生成に失敗したため、このメッセージの読み上げをスキップしました。';
 
 /**
- * Message posted when an invalid Speaker_ID is requested; lists the available
- * ids so the user can pick a valid one (Req 5.4).
+ * Message posted when an invalid Speaker_ID is requested (Req 5.4).
  *
- * @param {Array<{ name: string, styleId: number, styleName: string }>} speakers
+ * Deliberately short and self-contained: it no longer inlines the full speaker
+ * catalogue, because that list can exceed Discord's 2000-character message limit
+ * and cause the post to fail silently. Users are directed to `!voices` (which
+ * chunks the list) to see the available ids instead.
+ *
+ * @param {Array<{ name: string, styleId: number, styleName: string }>} [speakers]
+ *   Unused; kept optional for backward compatibility with existing callers.
  * @returns {string}
  */
+// eslint-disable-next-line no-unused-vars
 export function invalidSpeakerMessage(speakers) {
-  const list = formatSpeakerList(speakers);
-  return `指定されたボイスIDは利用できません。前のボイスのままにします。利用可能なボイス:\n${list}`;
+  return '指定されたボイスIDは利用できません。前のボイスのままにします。`!voices` で利用可能なボイス一覧を確認してください。';
 }
 
 /**
@@ -58,6 +63,44 @@ export function formatSpeakerList(speakers) {
   return speakers
     .map((s) => `${s.styleId}: ${s.name}（${s.styleName}）`)
     .join('\n');
+}
+
+/**
+ * Format the speaker catalogue like {@link formatSpeakerList}, but split into an
+ * array of message chunks each no longer than `maxLen` characters (Req 5.5).
+ *
+ * VOICEVOX can return 100+ styles whose combined list exceeds Discord's
+ * 2000-character message limit; sending it as one message throws and the reply
+ * is silently dropped. Splitting on line boundaries (a single line is never
+ * split) lets the caller post several messages that each fit the limit.
+ *
+ * @param {Array<{ name: string, styleId: number, styleName: string }>} speakers
+ * @param {number} [maxLen=1900] Maximum characters per chunk (kept under 2000).
+ * @returns {string[]} One or more chunk strings; a single placeholder chunk when
+ *   there are no speakers.
+ */
+export function formatSpeakerListChunks(speakers, maxLen = 1900) {
+  if (!Array.isArray(speakers) || speakers.length === 0) {
+    return ['(利用可能なボイスがありません)'];
+  }
+  const lines = speakers.map((s) => `${s.styleId}: ${s.name}（${s.styleName}）`);
+  /** @type {string[]} */
+  const chunks = [];
+  let current = '';
+  for (const line of lines) {
+    if (current === '') {
+      current = line;
+    } else if (current.length + 1 + line.length <= maxLen) {
+      current += `\n${line}`;
+    } else {
+      chunks.push(current);
+      current = line;
+    }
+  }
+  if (current !== '') {
+    chunks.push(current);
+  }
+  return chunks;
 }
 
 /**

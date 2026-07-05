@@ -98,6 +98,7 @@ export async function startBot(deps) {
   const voiceService = new VoiceService({
     joinVoiceChannel: voice.joinVoiceChannel,
     createAudioPlayer: voice.createAudioPlayer,
+    logger,
   });
 
   /** @param {import('./session/models.js').Session} session */
@@ -108,6 +109,7 @@ export async function startBot(deps) {
       readingLimit: config.readingLimit,
       createAudioResource: voice.createAudioResource,
       idleStatus: voice.AudioPlayerStatus.Idle,
+      logger,
     });
 
   const sessionManager = new SessionManager({ config, voiceService, createController });
